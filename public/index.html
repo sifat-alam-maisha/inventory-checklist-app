@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inventory Checklist App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #378b96; }
+        .container { max-width: 600px; margin-top: 40px; background: #95beeb; border-radius: 16px; box-shadow: 0 2px 16px #0002; padding: 32px; }
+        .d-none { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4 text-center">Inventory Checklist</h1>
+        
+        <!-- LOGIN FORM -->
+        <div id="loginBlock">
+            <form id="loginForm">
+                <h5>Login</h5>
+                <input type="text" class="form-control mb-2" id="loginUsername" placeholder="Username" required>
+                <input type="password" class="form-control mb-2" id="loginPassword" placeholder="Password" required>
+                <button class="btn btn-primary w-100 mb-2" type="submit">Login</button>
+            </form>
+            <div class="text-end mb-2">
+                <a href="#" id="forgotLink" class="text-danger fw-bold">Forgot Password?</a>
+            </div>
+            <div class="text-center">
+                <span>Don't have an account?</span>
+                <a href="#" id="showRegister" class="text-primary fw-bold">Register here</a>
+            </div>
+        </div>
+
+        <!-- REGISTER FORM -->
+        <div id="registerBlock" class="d-none">
+            <form id="registerForm">
+                <h5>Register</h5>
+                <input type="text" class="form-control mb-2" id="regUsername" placeholder="Username" required>
+                <input type="email" class="form-control mb-2" id="regEmail" placeholder="Email" required>
+                <input type="password" class="form-control mb-2" id="regPassword" placeholder="Password" required>
+                <button class="btn btn-primary w-100 mb-2" type="submit">Register</button>
+            </form>
+            <div class="text-center">
+                <span>Already have an account?</span>
+                <a href="#" id="showLogin" class="text-primary fw-bold">Login here</a>
+            </div>
+        </div>
+
+        <!-- FORGOT PASSWORD FORM -->
+        <div id="forgotBlock" class="d-none">
+            <form id="forgotForm">
+                <h5>Reset Password</h5>
+                <input type="email" class="form-control mb-2" id="forgotEmail" placeholder="Enter your email" required>
+                <button class="btn btn-warning w-100 mb-2" type="submit">Send Reset Link</button>
+            </form>
+            <div class="text-center">
+                <a href="#" id="backToLogin">Back to Login</a>
+            </div>
+        </div>
+
+        <!-- APP BLOCK -->
+        <div id="appBlock" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span id="welcome"></span>
+                <button class="btn btn-sm btn-secondary" id="logoutBtn">Logout</button>
+            </div>
+            <form id="addItemForm" class="row row-cols-1 row-cols-md-4 g-2 mb-4 align-items-center">
+    <div class="col">
+        <input type="text" id="name" class="form-control" placeholder="Name" required>
+    </div>
+    <div class="col">
+        <input type="text" id="category" class="form-control" placeholder="Category" required>
+    </div>
+    <div class="col">
+        <input type="number" id="quantity" class="form-control" placeholder="Quantity" min="0" step="1" required>
+    </div>
+    <div class="col d-grid">
+        <button type="submit" class="btn btn-success" id="submitBtn">Add</button>
+    </div>
+</form>
+
+            <h5>Items</h5>
+            <ul id="itemsList" class="list-group"></ul>
+        </div>
+    </div>
+    <script>
+        let token = '';
+        let currentUsername = '';
+        let editId = null;
+
+        function showBlock(blockId) {
+            ['loginBlock', 'registerBlock', 'forgotBlock', 'appBlock'].forEach(id => {
+                document.getElementById(id).classList.add('d-none');
+            });
+            document.getElementById(blockId).classList.remove('d-none');
+        }
+
+        // Auth block toggles
+        document.getElementById('showRegister').onclick = function() {
+            showBlock('registerBlock');
+            return false;
+        };
+        document.getElementById('showLogin').onclick = function() {
+            showBlock('loginBlock');
+            return false;
+        };
+        document.getElementById('forgotLink').onclick = function() {
+            showBlock('forgotBlock');
+            return false;
+        };
+        document.getElementById('backToLogin').onclick = function() {
+            showBlock('loginBlock');
+            return false;
+        };
+
+        // Register
+        document.getElementById('registerForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const res = await fetch('/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password, email}),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('Registered! You can now log in.');
+                this.reset();
+                showBlock('loginBlock');
+            } else {
+                alert(data.error || 'Registration failed.');
+            }
+        };
+
+        // Login
+        document.getElementById('loginForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password}),
+            });
+            const data = await res.json();
+            if (res.ok && data.token) {
+                token = data.token;
+                currentUsername = username;
+                showBlock('appBlock');
+                document.getElementById('welcome').textContent = 'Welcome, ' + currentUsername;
+                loadItems();
+            } else {
+                alert(data.error || 'Login failed.');
+            }
+        };
+
+        // Forgot Password
+        document.getElementById('forgotForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('forgotEmail').value;
+            await fetch('/forgot-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email })
+            });
+            alert('If your email is registered, a reset link has been sent.');
+            this.reset();
+            showBlock('loginBlock');
+        };
+
+        // Logout
+        document.getElementById('logoutBtn').onclick = async function() {
+            if (!token) return showBlock('loginBlock');
+            await fetch('/logout', {
+                method: 'POST',
+                headers: {'Authorization': 'Bearer ' + token}
+            });
+            showBlock('loginBlock');
+        };
+
+        // Add or update item (prevents negative quantities)
+        document.getElementById('addItemForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const name = document.getElementById('name').value.trim();
+            const category = document.getElementById('category').value.trim();
+            const quantity = Number(document.getElementById('quantity').value);
+
+            // Quantity must not be negative
+            if (quantity < 0 || !Number.isInteger(quantity)) {
+                alert("Quantity cannot be negative or fractional.");
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            if (editId) {
+                // Edit mode
+                await fetch(`/items/${editId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ name, category, quantity }),
+                });
+                editId = null;
+                btn.textContent = 'Add';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
+            } else {
+                // Add mode
+                await fetch('/items', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ name, category, quantity }),
+                });
+            }
+            loadItems();
+            this.reset();
+            document.getElementById('submitBtn').textContent = 'Add';
+            document.getElementById('submitBtn').classList.remove('btn-primary');
+            document.getElementById('submitBtn').classList.add('btn-success');
+        };
+
+        // Load all items (show quantity and status, robust toggle)
+        async function loadItems() {
+            const res = await fetch('/items', {
+                headers: {'Authorization': 'Bearer ' + token }
+            });
+            const items = await res.json();
+            const list = document.getElementById('itemsList');
+            list.innerHTML = '';
+            (items || []).forEach(item => {
+                const status = item.status === 'Out of Stock' ? 'Out of Stock' : 'In Stock';
+                const quantity = typeof item.quantity === "number" ? item.quantity : 0;
+                let qtyBadge = `<span class="badge ${quantity === 0 ? 'bg-warning text-dark' : 'bg-secondary'}">${quantity}</span>`;
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `
+    <span>
+        <strong>${item.name}</strong> (${item.category}) -
+        <span class="badge ${item.quantity == 0 ? 'bg-danger' : 'bg-success'}">
+            ${item.quantity == 0 ? 'Out of Stock' : 'In Stock'}
+        </span>
+        <span class="badge bg-secondary ms-2">${item.quantity}</span>
+    </span>
+    <span>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="editItem('${item._id}','${item.name}','${item.category}',${item.quantity})">Edit</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteItem('${item._id}')">Delete</button>
+    </span>
+`;
+
+
+                list.appendChild(li);
+            });
+        }
+
+        // Toggle stock status
+        window.toggleStatus = async function(id, currentStatus) {
+            const newStatus = currentStatus === 'In Stock' ? 'Out of Stock' : 'In Stock';
+            await fetch(`/items/${id}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+            loadItems();
+        };
+
+        // Edit item (fix update button styling)
+        window.editItem = function(id, name, category, quantity) {
+            document.getElementById('name').value = name;
+            document.getElementById('category').value = category;
+            document.getElementById('quantity').value = quantity;
+            editId = id;
+            const btn = document.getElementById('submitBtn');
+            btn.textContent = 'Update';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+        };
+
+        // Delete item
+        window.deleteItem = async function(id) {
+            if (!confirm('Delete this item?')) return;
+            await fetch(`/items/${id}`, {
+                method: 'DELETE',
+                headers: {'Authorization': 'Bearer ' + token}
+            });
+            loadItems();
+        };
+
+        // Auto logout if token expires (basic)
+        setInterval(() => {
+            if (token) {
+                const payload = token.split('.')[1];
+                try {
+                    const decoded = JSON.parse(atob(payload));
+                    if (decoded.exp * 1000 < Date.now()) {
+                        alert('Session expired. Please login again.');
+                        showBlock('loginBlock');
+                    }
+                } catch (e) {}
+            }
+        }, 60000);
+
+        // On page load, show login
+        showBlock('loginBlock');
+    </script>
+</body>
+</html>
