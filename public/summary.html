@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Inventory Summary</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    body { background: #378b96; }
+    .wrap { max-width: 1000px; margin: 40px auto; background: #95beeb; border-radius: 16px; box-shadow: 0 2px 16px #0002; padding: 24px; }
+    .card { border-radius: 14px; }
+    .stat { font-size: 1.25rem; font-weight: 700; }
+    .mini { font-size: .9rem; color:#123; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h3 class="mb-0">Inventory Summary</h3>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-dark btn-sm" href="/index.html">Back to App</a>
+        <a class="btn btn-outline-dark btn-sm" href="/item-names.html" target="_blank">Items (Names)</a>
+      </div>
+    </div>
+
+    <!-- Global stats -->
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-4">
+        <div class="card p-3 text-center">
+          <div class="mini">Total Items</div>
+          <div class="stat" id="totalItems">0</div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="card p-3 text-center">
+          <div class="mini">Total Quantity</div>
+          <div class="stat" id="totalQty">0</div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="card p-3 text-center">
+          <div class="mini">Out of Stock Items</div>
+          <div class="stat text-danger" id="oosCount">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category table + export -->
+    <div class="card p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">By Category</h6>
+        <button id="exportSummaryBtn" class="btn btn-sm btn-outline-dark" disabled>Export Summary CSV</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th class="text-end"># Items</th>
+              <th class="text-end">Total Qty</th>
+              <th class="text-end">Out of Stock</th>
+            </tr>
+          </thead>
+          <tbody id="catBody">
+            <!-- rows injected -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <div class="card p-3">
+          <h6>Items by Category</h6>
+          <canvas id="itemsPie"></canvas>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="card p-3">
+          <h6>Quantity by Category</h6>
+          <canvas id="qtyBar"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- TOKEN HANDLING -------------------------------------------------------
+    function getToken() {
+      try {
+        if (window.opener && window.opener.token) return window.opener.token;
+      } catch (_) { /* cross-origin safety */ }
+      const saved = localStorage.getItem('token');
+      return saved || '';
+    }
+    const token = getToken();
+
+    async function authedFetch(url, options = {}) {
+      const headers = options.headers || {};
+      return fetch(url, {
+        ...options,
+        headers: { ...headers, Authorization: `Bearer ${token}` },
+      });
+    }
+    // -------------------------------------------------------------------------
+
+    // Fetch items from API (requires valid token)
+    async function fetchItems() {
+      const res = await authedFetch('/items');
+      if (res.status === 401) {
+        alert('Could not fetch items (are you logged in?). Please open Summary from the app after logging in.');
+        return [];
+      }
+      if (!res.ok) {
+        alert('Failed to load data.');
+        return [];
+      }
+      return res.json();
+    }
+
+    // Compute summary data
+    function computeSummary(items) {
+      const totalItems = items.length;
+      const totalQty = items.reduce((s, i) => s + (Number.isFinite(i.quantity) ? i.quantity : 0), 0);
+      const oosCount = items.filter(i => (Number(i.quantity) || 0) === 0).length;
+
+      const byCat = {};
+      for (const it of items) {
+        const cat = (it.category || 'Uncategorized').trim() || 'Uncategorized';
+        if (!byCat[cat]) byCat[cat] = { items: 0, qty: 0, oos: 0 };
+        byCat[cat].items += 1;
+        byCat[cat].qty   += Number.isFinite(it.quantity) ? it.quantity : 0;
+        if ((Number(it.quantity) || 0) === 0) byCat[cat].oos += 1;
+      }
+
+      return { totalItems, totalQty, oosCount, byCat };
+    }
+
+    // Render top stats
+    function renderTopStats(sum) {
+      document.getElementById('totalItems').textContent = sum.totalItems;
+      document.getElementById('totalQty').textContent   = sum.totalQty;
+      document.getElementById('oosCount').textContent   = sum.oosCount;
+    }
+
+    // Render category table
+    function renderCategoryTable(byCat) {
+      const body = document.getElementById('catBody');
+      body.innerHTML = '';
+      const cats = Object.keys(byCat).sort((a,b) => a.localeCompare(b));
+      for (const c of cats) {
+        const row = byCat[c];
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${c}</td>
+          <td class="text-end">${row.items}</td>
+          <td class="text-end">${row.qty}</td>
+          <td class="text-end">${row.oos}</td>
+        `;
+        body.appendChild(tr);
+      }
+    }
+
+    // Charts
+    let pie, bar;
+    function renderCharts(byCat) {
+      const cats = Object.keys(byCat).sort((a,b) => a.localeCompare(b));
+      const itemsData = cats.map(c => byCat[c].items);
+      const qtyData   = cats.map(c => byCat[c].qty);
+
+      // Pie
+      const pieCtx = document.getElementById('itemsPie');
+      if (pie) pie.destroy();
+      pie = new Chart(pieCtx, {
+        type: 'pie',
+        data: { labels: cats, datasets: [{ data: itemsData }] },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+      });
+
+      // Bar
+      const barCtx = document.getElementById('qtyBar');
+      if (bar) bar.destroy();
+      bar = new Chart(barCtx, {
+        type: 'bar',
+        data: { labels: cats, datasets: [{ data: qtyData, label: 'Quantity' }] },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    // Export Summary CSV
+    function exportSummaryCSV(byCat, totals) {
+      const header = ['Category','Items','TotalQty','OutOfStock','AllItems','AllQty','AllOOS'];
+      const cats = Object.keys(byCat).sort((a,b) => a.localeCompare(b));
+      const rows = cats.map(c => [c, byCat[c].items, byCat[c].qty, byCat[c].oos, totals.totalItems, totals.totalQty, totals.oosCount]);
+
+      const lines = [header, ...rows].map(r => r.join(',')).join('\n');
+      const blob = new Blob([lines], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      a.download = `summary-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    let summary = null;
+    const exportBtn = document.getElementById('exportSummaryBtn');
+    exportBtn.addEventListener('click', () => {
+      if (summary) exportSummaryCSV(summary.byCat, summary);
+    });
+
+    // Init
+    (async function init() {
+      const items = await fetchItems();
+      summary = computeSummary(items);
+      renderTopStats(summary);
+      renderCategoryTable(summary.byCat);
+      renderCharts(summary.byCat);
+      exportBtn.disabled = false;
+    })();
+  </script>
+</body>
+</html>
