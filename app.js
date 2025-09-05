@@ -153,7 +153,23 @@ app.post('/items', authMiddleware, async (req, res) => {
 app.get('/items', authMiddleware, async (req, res) => {
   try {
     const items = await Item.find({ userId: req.userId }).sort({ createdAt: -1 });
-    res.json(items);
+
+    const results = [];
+    // Loop through all items and classify based on quantity
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+
+      // Check item quantity and set status accordingly
+      if (item.quantity > 10) {
+        results.push({ ...item._doc, status: 'In Stock' });
+      } else if (item.quantity > 0) {
+        results.push({ ...item._doc, status: 'Low Stock' });
+      } else {
+        results.push({ ...item._doc, status: 'Out of Stock' });
+      }
+    }
+
+    res.json(results);  // Send the items with their status
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
