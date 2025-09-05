@@ -1,5 +1,4 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -9,6 +8,7 @@ const path = require('path');  // Required for serving the HTML file
 
 const User = require('./models/User');
 const Item = require('./models/Item');
+const connectDb = require('./db');  // Import the MongoDB connection Singleton
 
 const JWT_SECRET = 'yoursecretkey';          // TODO: put in .env for production
 const tokenBlacklist = new Set();            // simple in-memory blacklist for logout
@@ -20,12 +20,7 @@ app.use(express.json());
 app.use(express.static('public'));           // serves public/*.html
 
 /* ---------------- DB ---------------- */
-mongoose.connect('mongodb://localhost:27017/inventory-checklist', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+connectDb();  // Establish MongoDB connection using Singleton pattern
 
 /* -------------- Auth Middleware -------------- */
 function authMiddleware(req, res, next) {
@@ -229,11 +224,11 @@ app.get('/items/names', authMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// add near the bottom of app.js (but above app.listen)
+
+// Serve item names HTML
 app.get('/item-names.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'item-names.html'));
 });
-
 
 /* -------------- Start -------------- */
 const PORT = 3000;
