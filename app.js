@@ -1,4 +1,3 @@
-// app.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -6,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const path = require('path');  // Required for serving the HTML file
 
 const User = require('./models/User');
 const Item = require('./models/Item');
@@ -223,15 +223,13 @@ app.put('/items/:id/status', authMiddleware, async (req, res) => {
 app.get('/items/names', authMiddleware, async (req, res) => {
   try {
     const items = await Item.find({ userId: req.userId }).select('name');
-    const unique = [...new Set(items.map(i => (i.name || '').trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b));
+    const unique = [...new Set(items.map(i => (i.name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     res.json(unique);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 // add near the bottom of app.js (but above app.listen)
-const path = require('path');
 app.get('/item-names.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'item-names.html'));
 });
